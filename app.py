@@ -1,108 +1,70 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
+import pickle
 
-# --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Happiness Score Predictor", layout="wide")
+# 1. Konfigurasi Halaman Streamlit
+st.set_page_config(page_title="Prediksi Kebahagiaan Negara", layout="centered")
 
-# --- FUNGSI LOAD DATA ---
-@st.cache_data
-def load_data():
-    # Pastikan file excel berada di folder yang sama dengan app.py
-    df = pd.read_excel('The Economics of Happiness.xlsx')
-    
-    # Preprocessing berdasarkan notebook
-    kolom_dibuang = ['Happiness rank', 'Label_Angka', 'Year']
-    df = df.drop(columns=kolom_dibuang, errors='ignore')
-    
-    # Menghapus missing values yang terdeteksi di notebook
-    df = df.dropna()
-    return df
+st.title("🌍 Prediksi Tingkat Kebahagiaan Negara")
+st.write("Aplikasi ini menggunakan model Regresi Linear Berganda untuk memprediksi apakah suatu negara tergolong **Bahagia (Ya)** atau **Tidak Bahagia (Tidak)** berdasarkan indikator ekonomi dan sosial.")
 
-df = load_data()
+# 2. Fungsi untuk memuat model (menggunakan cache agar tidak dimuat berulang kali)
+@st.cache_resource
+def load_models():
+    with open('fitur.pkl', 'rb') as f:
+        fitur = pickle.load(f)
+    with open('scaler.pkl', 'rb') as f:
+        scaler = pickle.load(f)
+    with open('regresi_berganda.pkl', 'rb') as f:
+        model = pickle.load(f)
+    return fitur, scaler, model
 
-# --- MODEL TRAINING (Linear Regression) ---
-# Menggunakan fitur yang tersisa untuk memprediksi Happiness Score
-TARGET = 'Happiness Score'
-X = df.drop(columns=[TARGET, 'Country'], errors='ignore')
-y = df[TARGET]
+# Memuat file pickle
+try:
+    fitur, scaler, model = load_models()
+except Exception as e:
+    st.error("Gagal memuat model! Pastikan file 'fitur.pkl', 'scaler.pkl', dan 'regresi_berganda.pkl' berada di folder yang sama dengan app.py.")
+    st.stop()
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-model = LinearRegression()
-model.fit(X_train, y_train)
+# 3. Membuat Form Input untuk User
+st.subheader("📊 Masukkan Data Prediktor")
 
-# --- SIDEBAR NAVIGASI ---
-st.sidebar.title("Navigasi")
-menu = st.sidebar.radio("Pilih Menu:", ["Eksplorasi Data (EDA)", "Prediksi Happiness Score"])
+input_data = {}
+# Membagi tampilan input menjadi 2 kolom agar lebih rapi
+col1, col2 = st.columns(2)
 
-# --- MENU 1: EDA ---
-if menu == "Eksplorasi Data (EDA)":
-    st.title("📊 Eksplorasi Data (EDA)")
-    st.write("Aplikasi ini menggunakan dataset **The Economics of Happiness**.")
-    
-    st.subheader("Data Overview")
-    st.dataframe(df.head())
-    
-    st.subheader("Statistik Deskriptif")
-    st.dataframe(df.describe())
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader(f"Distribusi {TARGET}")
-        fig, ax = plt.subplots(figsize=(8, 5))
-        sns.histplot(df[TARGET], kde=True, color='steelblue', ax=ax)
-        ax.set_title(f'Distribusi {TARGET}')
-        ax.set_xlabel(TARGET)
-        ax.set_ylabel('Frekuensi')
-        st.pyplot(fig)
-        
-    with col2:
-        st.subheader("Heatmap Korelasi")
-        num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        corr = df[num_cols].corr()
-        fig2, ax2 = plt.subplots(figsize=(10, 8))
-        sns.heatmap(corr, annot=True, fmt='.2f', cmap='RdBu_r', center=0, square=True, ax=ax2)
-        ax2.set_title('Heatmap Korelasi Pearson')
-        st.pyplot(fig2)
-
-# --- MENU 2: PREDIKSI ---
-elif menu == "Prediksi Happiness Score":
-    st.title("🔮 Prediksi Happiness Score")
-    st.write("Masukkan nilai metrik negara pada form di bawah ini untuk memprediksi **Happiness Score**.")
-    
-    # Membuat form input berdasarkan nilai min & max dari dataset
-    with st.form("prediction_form"):
-        col1, col2 = st.columns(2)
-        
+# Looping berdasarkan daftar fitur yang ada di fitur.pkl
+for i, col_name in enumerate(fitur):
+    if i % 2 == 0:
         with col1:
-            gdp = st.slider("GDP per capita", float(X['GDP per capita'].min()), float(X['GDP per capita'].max()), float(X['GDP per capita'].mean()))
-            social = st.slider("Social support", float(X['Social support'].min()), float(X['Social support'].max()), float(X['Social support'].mean()))
-            healthy = st.slider("Healthy life", float(X['Healthy life'].min()), float(X['Healthy life'].max()), float(X['Healthy life'].mean()))
-            
+            # Gunakan st.number_input untuk menerima input angka desimal
+            input_data[col_name] = st.number_input(f"Nilai {col_name}", value=0.00, format="%.4f")
+    else:
         with col2:
-            freedom = st.slider("Freedom", float(X['Freedom'].min()), float(X['Freedom'].max()), float(X['Freedom'].mean()))
-            generosity = st.slider("Generosity", float(X['Generosity'].min()), float(X['Generosity'].max()), float(X['Generosity'].mean()))
-            corruption = st.slider("Corruption", float(X['Corruption'].min()), float(X['Corruption'].max()), float(X['Corruption'].mean()))
-            
-        submitted = st.form_submit_button("Prediksi!")
+            input_data[col_name] = st.number_input(f"Nilai {col_name}", value=0.00, format="%.4f")
+
+# 4. Tombol Prediksi
+st.markdown("---")
+if st.button("🚀 Prediksi Sekarang", use_container_width=True):
+    
+    # a. Ubah input dari dictionary ke dalam format DataFrame (sesuai format data training)
+    df_input = pd.DataFrame([input_data])
+    
+    # b. Standarisasi/Scaling data menggunakan scaler.pkl yang sudah dilatih
+    scaled_input = scaler.transform(df_input)
+    
+    # c. Melakukan prediksi menggunakan model regresi
+    prediksi_kontinu = model.predict(scaled_input)[0]
+    
+    # d. Mengonversi hasil regresi (angka desimal) menjadi label klasifikasi dengan batas 0.5
+    if prediksi_kontinu >= 0.5:
+        status = "BAHAGIA (Ya)"
+        st.success(f"### Hasil: Negara ini diprediksi **{status}**")
+        st.balloons() # Animasi balon untuk hasil positif
+    else:
+        status = "TIDAK BAHAGIA (Tidak)"
+        st.error(f"### Hasil: Negara ini diprediksi **{status}**")
         
-        if submitted:
-            # Memasukkan input user ke dalam format DataFrame
-            user_data = pd.DataFrame({
-                'GDP per capita': [gdp],
-                'Social support': [social],
-                'Healthy life': [healthy],
-                'Freedom': [freedom],
-                'Generosity': [generosity],
-                'Corruption': [corruption]
-            })
-            
-            # Melakukan prediksi
-            prediction = model.predict(user_data)[0]
-            
-            st.success(f"### Estimasi Happiness Score: **{prediction:.3f}**")
+    # Menampilkan nilai desimal asli sebagai informasi tambahan
+    st.info(f"Nilai perhitungan regresi mentah: **{prediksi_kontinu:.4f}**")
